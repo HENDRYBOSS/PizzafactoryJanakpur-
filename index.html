@@ -504,4 +504,244 @@
         const priceInput = document.getElementById('productPrice');
         const fileInput = document.getElementById('productImageFile');
         const preview = document.getElementById('imagePreview');
-        const hiddenUrl = document.getElementBy
+        const hiddenUrl = document.getElementById('productImageUrl');
+        const editProdId = document.getElementById('editProductId');
+        const editSecId = document.getElementById('editSectionId');
+        
+        if(product) {
+            title.innerText = 'Edit Product';
+            nameInput.value = product.name;
+            priceInput.value = product.price;
+            hiddenUrl.value = product.image;
+            editProdId.value = product.id;
+            editSecId.value = sectionId;
+            if(product.image && product.image !== '') {
+                preview.src = product.image;
+                preview.style.display = 'block';
+            } else { preview.style.display = 'none'; }
+        } else {
+            title.innerText = 'Add New Product';
+            nameInput.value = '';
+            priceInput.value = '';
+            hiddenUrl.value = '';
+            editProdId.value = '';
+            editSecId.value = sectionId;
+            preview.style.display = 'none';
+        }
+        fileInput.value = '';
+        modal.classList.add('active');
+        
+        // Preview on file select
+        fileInput.onchange = function(e) {
+            const file = e.target.files[0];
+            if(file) {
+                const reader = new FileReader();
+                reader.onload = function(ev) {
+                    preview.src = ev.target.result;
+                    preview.style.display = 'block';
+                    hiddenUrl.value = ev.target.result; // store base64
+                };
+                reader.readAsDataURL(file);
+            }
+        };
+    }
+    
+    function saveProductFromModal() {
+        const name = document.getElementById('productName').value.trim();
+        const price = parseFloat(document.getElementById('productPrice').value);
+        let image = document.getElementById('productImageUrl').value;
+        const sectionId = parseInt(document.getElementById('editSectionId').value);
+        const editId = document.getElementById('editProductId').value;
+        
+        if(!name || isNaN(price)) { alert("Enter valid name and price"); return; }
+        if(!image) image = "https://picsum.photos/200/150?random=" + Date.now();
+        
+        const section = sections.find(s => s.id === sectionId);
+        if(!section) { alert("Section not found"); return; }
+        
+        if(editId) {
+            // Edit existing
+            const productIndex = section.products.findIndex(p => p.id === parseInt(editId));
+            if(productIndex !== -1) {
+                section.products[productIndex] = { ...section.products[productIndex], name, price, image };
+                showToast("Product updated");
+            }
+        } else {
+            // Add new
+            const newProduct = { id: nextProductId++, name, price, image };
+            section.products.push(newProduct);
+            showToast("Product added");
+        }
+        saveDataToLocal();
+        document.getElementById('productModal').classList.remove('active');
+        renderActiveSection();
+        renderTabs(); // keep tabs updated
+    }
+    
+    // Section Management
+    function openSectionModal(editSection = null) {
+        const modal = document.getElementById('sectionModal');
+        const nameInput = document.getElementById('sectionName');
+        const editIdInput = document.getElementById('editSectionId');
+        if(editSection) {
+            nameInput.value = editSection.name;
+            editIdInput.value = editSection.id;
+        } else {
+            nameInput.value = '';
+            editIdInput.value = '';
+        }
+        modal.classList.add('active');
+    }
+    
+    function saveSectionFromModal() {
+        let name = document.getElementById('sectionName').value.trim();
+        const editId = document.getElementById('editSectionId').value;
+        if(!name) { alert("Enter section name"); return; }
+        if(editId) {
+            const idx = sections.findIndex(s => s.id === parseInt(editId));
+            if(idx !== -1) {
+                sections[idx].name = name;
+                showToast("Section updated");
+            }
+        } else {
+            const newId = nextSectionId++;
+            sections.push({ id: newId, name: name, products: [] });
+            showToast("Section created");
+        }
+        saveDataToLocal();
+        document.getElementById('sectionModal').classList.remove('active');
+        if(sections.length > 0 && !activeSectionId) activeSectionId = sections[0].id;
+        renderTabs();
+        renderActiveSection();
+    }
+    
+    // Billing Logic
+    function addToOrder(product) {
+        const existing = currentOrder.find(item => item.productId === product.id);
+        if(existing) existing.quantity++;
+        else currentOrder.push({ productId: product.id, productName: product.name, price: product.price, quantity: 1 });
+        updateOrderUI();
+        showToast(`${product.name} added to bill`);
+    }
+    
+    function updateOrderUI() {
+        const container = document.getElementById('currentOrderList');
+        const totalSpan = document.getElementById('billTotalAmount');
+        if(!container) return;
+        if(currentOrder.length === 0) {
+            container.innerHTML = '<div style="text-align:center; color:gray;">No items in current order</div>';
+            totalSpan.innerText = 'रु 0';
+            return;
+        }
+        let total = 0;
+        let html = '';
+        currentOrder.forEach((item, idx) => {
+            const subtotal = item.price * item.quantity;
+            total += subtotal;
+            html += `
+                <div class="order-item">
+                    <div><strong>${item.productName}</strong><br><small>रु ${item.price} x ${item.quantity}</small></div>
+                    <div>रु ${subtotal} <button class="remove-order-item" data-idx="${idx}" style="background:none; border:none; color:#e67e22;"><i class="fas fa-times-circle"></i></button></div>
+                </div>
+            `;
+        });
+        container.innerHTML = html;
+        totalSpan.innerText = `रु ${total}`;
+        document.querySelectorAll('.remove-order-item').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const idx = parseInt(btn.dataset.idx);
+                currentOrder.splice(idx,1);
+                updateOrderUI();
+            });
+        });
+    }
+    
+    function clearOrder() { currentOrder = []; updateOrderUI(); showToast("Order cleared"); }
+    
+    function generateBill() {
+        const customerName = document.getElementById('customerName').value.trim();
+        if(!customerName) { alert("Enter customer name"); return; }
+        if(currentOrder.length === 0) { alert("No items in order"); return; }
+        const date = new Date().toLocaleString();
+        let itemsHtml = '';
+        let total = 0;
+        currentOrder.forEach(item => {
+            const subtotal = item.price * item.quantity;
+            total += subtotal;
+            itemsHtml += `<tr><td>${item.productName}</td><td>${item.quantity}</td><td>रु ${item.price}</td><td>रु ${subtotal}</td></tr>`;
+        });
+        const billHtml = `
+            <div style="font-family: monospace; padding: 1rem; max-width: 350px; margin:0 auto;">
+                <h3 style="text-align:center;">🍕 Pizza Factory Janakpur</h3>
+                <p style="text-align:center;">Bhanu Chowk, Janakpur Dham<br>Ph: 98123-45678</p>
+                <hr>
+                <p><strong>Customer:</strong> ${customerName}</p>
+                <p><strong>Date:</strong> ${date}</p>
+                <hr>
+                <table style="width:100%; border-collapse:collapse;">${itemsHtml}</table>
+                <hr>
+                <p><strong>Total Amount: रु ${total}</strong></p>
+                <p style="text-align:center;">Thank you! Visit Again 🙏</p>
+            </div>
+        `;
+        document.getElementById('billPreviewContent').innerHTML = billHtml;
+        document.getElementById('billPreviewSection').style.display = 'block';
+        window.currentBillHTML = billHtml;
+        window.currentBillTotal = total;
+        window.currentCustomer = customerName;
+        showToast("Bill generated");
+    }
+    
+    function printBill() { const w = window.open(); w.document.write(window.currentBillHTML); w.document.close(); w.print(); }
+    function shareBill() { if(navigator.share) navigator.share({ title: 'Pizza Factory Bill', text: `Total: रु ${window.currentBillTotal}` }); else alert("Share not supported"); }
+    function downloadBill() {
+        const blob = new Blob([window.currentBillHTML], {type: 'text/html'});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `bill_${window.currentCustomer}_${Date.now()}.html`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+    }
+    
+    function showToast(msg) {
+        let toast = document.getElementById('dynamicToast');
+        if(!toast) {
+            toast = document.createElement('div');
+            toast.id = 'dynamicToast';
+            toast.style.position = 'fixed';
+            toast.style.bottom = '20px';
+            toast.style.left = '50%';
+            toast.style.transform = 'translateX(-50%)';
+            toast.style.backgroundColor = '#e67e22';
+            toast.style.color = 'white';
+            toast.style.padding = '0.7rem 1.5rem';
+            toast.style.borderRadius = '3rem';
+            toast.style.zIndex = '9999';
+            document.body.appendChild(toast);
+        }
+        toast.innerText = msg;
+        toast.style.opacity = '1';
+        setTimeout(() => toast.style.opacity = '0', 2000);
+    }
+    
+    // Event Listeners
+    document.getElementById('generateBillBtn')?.addEventListener('click', generateBill);
+    document.getElementById('clearOrderBtn')?.addEventListener('click', clearOrder);
+    document.getElementById('printBillBtn')?.addEventListener('click', printBill);
+    document.getElementById('shareBillBtn')?.addEventListener('click', shareBill);
+    document.getElementById('downloadBillBtn')?.addEventListener('click', downloadBill);
+    document.getElementById('addNewSectionBtn')?.addEventListener('click', () => openSectionModal(null));
+    document.getElementById('saveProductBtn')?.addEventListener('click', saveProductFromModal);
+    document.getElementById('saveSectionBtn')?.addEventListener('click', saveSectionFromModal);
+    
+    // Close modals
+    document.getElementById('closeProductModal')?.addEventListener('click', () => document.getElementById('productModal').classList.remove('active'));
+    document.getElementById('closeSectionModal')?.addEventListener('click', () => document.getElementById('sectionModal').classList.remove('active'));
+    window.onclick = (e) => { if(e.target.classList.contains('modal')) e.target.classList.remove('active'); };
+    
+    // Initialize
+    loadData();
+    updateOrderUI();
+</script>
+</body>
+</html>
